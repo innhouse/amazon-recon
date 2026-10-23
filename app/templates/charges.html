@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Amazon card charges <span class="muted">({{ rows|length }}, total {{ total|money }})</span></h1>
+<p class="muted">What Amazon says it charged, per card. Use this to answer "which invoices go with card X between these dates".</p>
+<form method="get" class="inline">
+  <label>Card <select name="card"><option value="">all</option>{% for c in cards %}<option {% if c == card %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
+  <label>From <input type="date" name="date_from" value="{{ date_from }}"></label>
+  <label>To <input type="date" name="date_to" value="{{ date_to }}"></label>
+  <button>Filter</button>
+  <a class="btn" href="/charges.csv?card={{ card }}&date_from={{ date_from }}&date_to={{ date_to }}">Download CSV</a>
+</form>
+<table>
+  <tr><th>Charged</th><th>Card</th><th class="num">Amount</th><th>Order</th><th>Ordered</th><th>User</th><th>Source</th><th>Bank</th><th>Invoice</th></tr>
+  {% for r in rows %}
+  <tr class="{% if r.matched %}ok{% endif %}">
+    <td>{{ r.shipped_date }}</td><td>{{ r.card_last4 or '' }}</td><td class="num">{{ r.total|money }} {{ r.currency }}</td>
+    <td><a href="/orders?q={{ r.order_id }}">{{ r.order_id }}</a></td><td>{{ r.order_date or '' }}</td><td>{{ r.payer or '' }}</td>
+    <td class="small muted">{{ r.source }}</td><td>{{ 'matched' if r.matched else '' }}</td>
+    <td>{% if r.invoice_url %}<a href="{{ r.invoice_url }}" target="_blank">official</a>{% endif %} <a href="/invoices/{{ r.order_id }}.pdf" target="_blank">{{ 'PDF' if r.invoice_pdf else 'summary' }}</a></td>
+  </tr>
+  {% else %}<tr><td colspan="9" class="muted">No charges yet. Import the reconciliation report or sync a mailbox.</td></tr>{% endfor %}
+</table>
+{% endblock %}

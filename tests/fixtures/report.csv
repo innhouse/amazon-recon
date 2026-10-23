@@ -1,0 +1,8 @@
+Transaction Date,Payment Reference ID,Transaction Type,Currency,Payment Amount,Account Group,Payment Instrument Type,Payment Identifier,Account User,Order Date,Order ID,PO Number,Order Status,Approver,GL Code,Department,Cost Centre,Project Code,Location,Custom Field 1
+2026/10/17,REF001,Charge,CAD,"106.39","Example Ltd",Visa,="3874",Pat Example,2026/10/15,701-0000001-0000001,,Closed,,,,,,,
+2026/10/14,REF002,Charge,CAD,"56.16","Example Ltd",Visa,="3874",Pat Example,2026/10/12,701-0000002-0000002,,Closed,,,,,,,
+2026/10/14,REF003,Charge,CAD,"42.12","Example Ltd",Visa,="3874",Pat Example,2026/10/12,701-0000002-0000002,,Closed,,,,,,,
+2026/10/14,REF004,Charge,CAD,"56.16","Example Ltd",Visa,="1012",Pat Example,2026/10/12,701-0000003-0000003,,Closed,,,,,,,
+2026/10/09,REF005,Refund,CAD,"19.99","Example Ltd",Visa,="3874",Pat Example,2026/09/30,701-0000004-0000004,,Closed,,,,,,,
+2026/10/07,REF006,Charge,CAD,"52.63","Example Ltd",Visa,="3874",Pat Example,2026/10/06,702-1234567-8901234,,Closed,,,,,,,
+2026/10/14,REF007,Charge,CAD,"12.00","Example Ltd",Visa,="3874",Pat Example,2026/10/13,701-0000005-0000005,,Closed,,,,,,,

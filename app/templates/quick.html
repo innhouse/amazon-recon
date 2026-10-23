@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Paste the charges</h1>
+<p class="muted">Paste the list from accounting's email, one charge per line. A date is required; the amount is optional but makes matching far more reliable. Examples:</p>
+<pre>Oct 17, 2026   52.63
+Oct 14, 2026   AMZN Mktp CA   105.26
+2026-10-13
+10/11/2026  $19.99</pre>
+<form method="post" action="/bank/quick" class="stack">
+  <div class="row"><label>Card / account label <input name="account" required placeholder="RBC Visa 3874"></label><label>Currency <input name="currency" value="CAD" size="4"></label></div>
+  <textarea name="text" rows="12" required></textarea>
+  <button>Add and match</button>
+</form>
+{% endblock %}

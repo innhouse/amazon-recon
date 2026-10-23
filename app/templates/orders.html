@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Orders <span class="muted">({{ data|length }})</span></h1>
+<form method="get" class="inline"><input name="q" value="{{ q }}" placeholder="order number or item"> <button>Search</button></form>
+{% for d in data %}
+<section class="card order {% if d.used %}matched{% endif %}">
+  <div class="row between">
+    <div><b>{{ d.o.order_id }}</b> <span class="muted">{{ d.o.marketplace }} · ordered {{ d.o.order_date or '?' }}{% if d.o.buyer %} · {{ d.o.buyer }}{% endif %}</span></div>
+    <div class="num"><b>{{ d.o.total|money }} {{ d.o.currency or '' }}</b></div>
+  </div>
+  <div class="links">
+    {% if d.o.invoice_url %}<a href="{{ d.o.invoice_url }}" target="_blank">Official invoice page</a>{% endif %}
+    <a href="/invoices/{{ d.o.order_id }}.pdf" target="_blank">{% if d.o.invoice_pdf %}Official PDF{% else %}Summary PDF{% endif %}</a>
+  </div>
+  {% if d.ships %}
+  <table>
+    <tr><th>Shipment</th><th>Shipped</th><th class="num">Charged</th><th>Items</th><th>Bank match</th></tr>
+    {% for s in d.ships %}
+    <tr>
+      <td class="mono">{{ s.shipment_id }}</td><td>{{ s.shipped_date }}</td><td class="num">{{ s.total|money }} {{ s.currency }}</td>
+      <td>{% for i in d.lines if i.shipment_id == s.shipment_id %}{{ i.quantity }}× {{ i.description[:70] }}<br>{% endfor %}</td>
+      <td>{% for m in d.matches if s.shipment_id in (m.ref_ids|fromjson) %}<span class="pill ok">{{ m.txn_date }} · {{ m.amount|money }} · {{ m.account or '' }}</span>{% endfor %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+  {% set unassigned = d.lines|selectattr('shipment_id', 'none')|list %}
+  {% if unassigned %}<p class="muted small">On the order confirmation: {% for i in unassigned %}{{ i.quantity }}× {{ i.description[:60] }}{% if not loop.last %}; {% endif %}{% endfor %}</p>{% endif %}
+  {% for m in d.matches if m.kind == 'order' %}<span class="pill ok">whole order matched to {{ m.txn_date }} · {{ m.amount|money }} · {{ m.account or '' }}</span>{% endfor %}
+</section>
+{% else %}
+<p class="muted">No orders yet. Sync a mailbox from the dashboard.</p>
+{% endfor %}
+{% endblock %}

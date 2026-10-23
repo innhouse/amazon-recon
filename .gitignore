@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+data/*.sqlite3*
+data/token.json
+data/credentials.json
+data/browser-profile/
+data/invoices/
+data/summaries/
+data/uploads/
+output/
+data/imports/
+.pytest_cache/

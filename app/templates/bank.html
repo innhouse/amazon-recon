@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Bank lines</h1>
+<form method="get" class="inline">
+  <label>Account <select name="account"><option value="">all</option>{% for a in accounts %}<option {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label>
+  <label>Show <select name="show"><option value="amazon" {% if show == 'amazon' %}selected{% endif %}>Amazon only</option><option value="all" {% if show == 'all' %}selected{% endif %}>everything</option></select></label>
+  <button>Filter</button>
+</form>
+<table>
+  <tr><th>Date</th><th>Account</th><th>Description</th><th class="num">Amount</th><th>Status</th><th></th></tr>
+  {% for r in rows %}
+  <tr class="{% if r.order_id %}ok{% elif r.is_amazon %}warn{% endif %}">
+    <td>{{ r.txn_date }}</td><td>{{ r.account or '' }}</td><td>{{ r.description }}</td>
+    <td class="num">{% if r.amount is none %}?{% else %}{{ r.amount|money }}{% endif %}</td>
+    <td>{% if r.order_id %}<a href="/orders?q={{ r.order_id }}">{{ r.order_id }}</a> <span class="muted small">{{ r.method }} {{ '%.0f'|format(r.confidence*100) }}%</span>
+        {% elif r.is_amazon %}<a href="/review">unmatched</a>{% else %}<span class="muted">not Amazon</span>{% endif %}</td>
+    <td class="actions">
+      {% if r.order_id %}<form method="post" action="/match/{{ r.id }}/unmatch" class="inline"><input type="hidden" name="back" value="/bank"><button class="small">unmatch</button></form>{% endif %}
+      <form method="post" action="/bank/{{ r.id }}/flag" class="inline"><input type="hidden" name="is_amazon" value="{{ 0 if r.is_amazon else 1 }}"><button class="small">{{ 'not Amazon' if r.is_amazon else 'is Amazon' }}</button></form>
+      <form method="post" action="/bank/{{ r.id }}/delete" class="inline" onsubmit="return confirm('Delete this line?')"><button class="small danger">delete</button></form>
+    </td>
+  </tr>
+  {% else %}<tr><td colspan="6" class="muted">Nothing imported yet.</td></tr>{% endfor %}
+</table>
+{% endblock %}

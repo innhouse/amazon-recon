@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Amazon reconciliation{% endblock %}</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <a class="brand" href="/">Amazon invoice reconciliation</a>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/orders">Orders</a>
+    <a href="/charges">Charges</a>
+    <a href="/bank">Bank lines</a>
+    <a href="/bank/quick">Paste charges</a>
+    <a href="/bank/import">Import CSV</a>
+    <a href="/review">Review</a>
+  </nav>
+</header>
+<main>
+{% if flash %}<div class="flash">{{ flash }}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Review queue <span class="muted">({{ queue|length }})</span></h1>
+<form method="get" class="inline"><label>Account <select name="account"><option value="">all</option>{% for a in accounts %}<option {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}</select></label> <button>Filter</button></form>
+{% for t, cands in queue %}
+<section class="card">
+  <div class="row between">
+    <div><b>{{ t.txn_date }}</b> · {{ t.account or '' }} · {{ t.description }}</div>
+    <div class="num"><b>{% if t.amount is none %}amount unknown{% else %}{{ t.amount|money }} {{ t.currency or '' }}{% endif %}</b></div>
+  </div>
+  {% if cands %}
+  <table>
+    <tr><th>Candidate</th><th>Date</th><th>Confidence</th><th></th></tr>
+    {% for c in cands %}
+    <tr>
+      <td>{{ c.label }} <a class="small" href="/orders?q={{ c.order_id }}">view</a></td><td>{{ c.ref_date or '' }}</td>
+      <td>{{ '%.0f'|format(c.confidence*100) }}%</td>
+      <td><form method="post" action="/match/accept" class="inline">
+        <input type="hidden" name="txn_id" value="{{ t.id }}"><input type="hidden" name="kind" value="{{ c.kind }}">
+        <input type="hidden" name="ref_ids" value='{{ c.ref_ids|tojson }}'><input type="hidden" name="order_id" value="{{ c.order_id }}">
+        <input type="hidden" name="method" value="{{ c.method }}"><input type="hidden" name="confidence" value="{{ c.confidence }}">
+        <input type="hidden" name="back" value="/review?account={{ account }}"><button class="small">Accept</button></form></td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}<p class="muted">No candidate found. Possible reasons: the email for this charge is in another mailbox, the charge belongs to a different Amazon account, or it is a subscription (Prime) with no order email.</p>{% endif %}
+  <form method="post" action="/match/manual" class="inline">
+    <input type="hidden" name="txn_id" value="{{ t.id }}"><input type="hidden" name="back" value="/review?account={{ account }}">
+    <label>Manual: <select name="target">
+      <optgroup label="Shipments">{% for s in shipments %}<option value="shipment:{{ s.shipment_id }}">{{ s.shipped_date }} · {{ s.total|money }} {{ s.currency }} · {{ s.order_id }}</option>{% endfor %}</optgroup>
+      <optgroup label="Whole orders">{% for o in orders %}<option value="order:{{ o.order_id }}">{{ o.order_date }} · {{ o.total|money }} {{ o.currency or '' }} · {{ o.order_id }}</option>{% endfor %}</optgroup>
+    </select></label> <button class="small">Match</button>
+  </form>
+  <form method="post" action="/bank/{{ t.id }}/flag" class="inline"><input type="hidden" name="is_amazon" value="0"><button class="small">Not an Amazon charge</button></form>
+</section>
+{% else %}
+<p class="muted">Nothing to review. Everything Amazon-looking is matched (or nothing has been imported yet).</p>
+{% endfor %}
+{% endblock %}

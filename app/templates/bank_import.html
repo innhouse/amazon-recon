@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Import a statement CSV</h1>
+{% if not preview %}
+<form method="post" action="/bank/import/preview" enctype="multipart/form-data" class="stack">
+  <div class="row"><label>CSV file <input type="file" name="file" accept=".csv,text/csv" required></label></div>
+  <div class="row"><label>Card / account label <input name="account" placeholder="RBC Visa 3874"></label><label>Currency <input name="currency" value="CAD" size="4"></label></div>
+  <button>Preview</button>
+</form>
+{% else %}
+{% if preview.error %}<div class="flash warn">{{ preview.error }}</div>{% endif %}
+<h2>Columns detected</h2>
+<form method="post" action="/bank/import/confirm" class="stack">
+  <input type="hidden" name="token" value="{{ preview.token }}"><input type="hidden" name="filename" value="{{ preview.filename }}">
+  <input type="hidden" name="account" value="{{ preview.account }}"><input type="hidden" name="currency" value="{{ preview.currency }}">
+  {% set m = preview.mapping %}
+  <div class="row">
+    <label>Date <select name="date_col">{% for i in range(preview.ncols) %}<option value="{{ i }}" {% if i == m.date %}selected{% endif %}>col {{ i+1 }}</option>{% endfor %}</select></label>
+    <label>Description <select name="desc_col">{% for i in range(preview.ncols) %}<option value="{{ i }}" {% if i == m.description %}selected{% endif %}>col {{ i+1 }}</option>{% endfor %}</select></label>
+    <label>Amount <select name="amount_col"><option value="">—</option>{% for i in range(preview.ncols) %}<option value="{{ i }}" {% if i == m.amount %}selected{% endif %}>col {{ i+1 }}</option>{% endfor %}</select></label>
+    <label>Debit <select name="debit_col"><option value="">—</option>{% for i in range(preview.ncols) %}<option value="{{ i }}" {% if i == m.debit %}selected{% endif %}>col {{ i+1 }}</option>{% endfor %}</select></label>
+    <label>Credit <select name="credit_col"><option value="">—</option>{% for i in range(preview.ncols) %}<option value="{{ i }}" {% if i == m.credit %}selected{% endif %}>col {{ i+1 }}</option>{% endfor %}</select></label>
+    <label>Charges are <select name="amount_sign"><option value="1" {% if m.amount_sign == 1 %}selected{% endif %}>positive</option><option value="-1" {% if m.amount_sign == -1 %}selected{% endif %}>negative</option></select></label>
+    <label>First row is a header <select name="has_header"><option value="1" {% if m.has_header %}selected{% endif %}>yes</option><option value="0" {% if not m.has_header %}selected{% endif %}>no</option></select></label>
+  </div>
+  <table><caption>First rows of the file</caption>
+    {% for r in preview.rows %}<tr>{% for c in r %}<td class="small">{{ c }}</td>{% endfor %}</tr>{% endfor %}
+  </table>
+  <h2>How they will be read <span class="muted">({{ preview.count }} rows, {{ preview.amazon }} look like Amazon)</span></h2>
+  <table><tr><th>Date</th><th>Description</th><th class="num">Amount</th><th>Amazon?</th></tr>
+    {% for t in preview.txns %}<tr><td>{{ t.txn_date }}</td><td>{{ t.description }}</td><td class="num">{{ t.amount|money }}</td><td>{{ 'yes' if t.is_amazon else '' }}</td></tr>{% endfor %}
+  </table>
+  {% if preview.errors %}<p class="warn">{{ preview.errors|length }} rows could not be read: {{ preview.errors|join('; ') }}</p>{% endif %}
+  <p class="muted">If the columns are wrong, change them above; the preview is re-read with your choice on import.</p>
+  <button>Import {{ preview.count }} rows</button> <a class="btn" href="/bank/import">Start over</a>
+</form>
+{% endif %}
+{% endblock %}

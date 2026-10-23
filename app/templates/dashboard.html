@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+<div class="tiles">
+  <div class="tile"><b>{{ counts.orders }}</b><span>orders</span></div>
+  <div class="tile"><b>{{ counts.shipments }}</b><span>shipments (card charges)</span></div>
+  <div class="tile"><b>{{ counts.refunds }}</b><span>refunds</span></div>
+  <div class="tile"><b>{{ counts.bank }}</b><span>Amazon bank lines</span></div>
+  <div class="tile ok"><b>{{ counts.matched }}</b><span>matched</span></div>
+  <div class="tile {% if counts.unmatched %}warn{% endif %}"><b>{{ counts.unmatched }}</b><span>need review</span></div>
+  <div class="tile"><b>{{ counts.pdfs }}</b><span>official PDFs saved</span></div>
+</div>
+
+<div class="cols">
+<section class="card">
+  <h2>1. Import the Amazon Business reconciliation report</h2>
+  <p class="muted">Amazon Business → Business Analytics → Reconciliation → download CSV. Each line is one card charge with its order number, so matching is exact.</p>
+  <form method="post" action="/import/amazon-report" enctype="multipart/form-data" class="row">
+    <label>CSV <input type="file" name="file" accept=".csv,text/csv" required></label>
+    <label>Marketplace <input name="marketplace" value="amazon.ca" size="10"></label>
+    <button>Import report</button>
+  </form>
+  <p><a class="btn" href="/charges">Browse charges by card and date</a></p>
+  <hr>
+  <h2>Personal Amazon account: paste the "Your Transactions" page</h2>
+  <p class="muted">Personal accounts have no download. Open <a href="https://www.amazon.ca/cpe/yourpayments/transactions" target="_blank">Your Account → Your Payments → Transactions</a>,
+    select all the text on the page (Ctrl/Cmd+A, Ctrl/Cmd+C), paste it here. Date, card, amount and order number are picked out of the text.</p>
+  <form method="post" action="/import/amazon-transactions" class="stack">
+    <textarea name="text" rows="5" placeholder="October 17, 2026&#10;Visa ****3874&#10;-$106.39&#10;Order #701-5120229-1371409 ..."></textarea>
+    <div class="row"><label>Marketplace <input name="marketplace" value="amazon.ca" size="10"></label><label>Card if the page does not show it <input name="card_hint" size="4" placeholder="3874"></label><button>Import transactions</button></div>
+  </form>
+  <hr>
+  <h2>Optional: read the Amazon emails too</h2>
+  <p class="muted">Adds item descriptions, and covers orders from a personal (non-Business) Amazon account that are not in the report.</p>
+  <form method="post" action="/sync/imap" class="stack">
+    <p class="muted">Reads the "Ordered", "Shipped" and refund emails. For iCloud use host <code>imap.mail.me.com</code> and an
+      <a href="https://account.apple.com" target="_blank">app-specific password</a>. Values set with IMAP_* environment variables are used when a field is empty.</p>
+    <div class="row"><label>Host <input name="host" value="{{ imap_host }}"></label><label>Port <input name="port" value="993" size="5"></label></div>
+    <div class="row"><label>Email <input name="user" value="{{ imap_user }}" placeholder="you@icloud.com"></label><label>App password <input name="password" type="password"></label></div>
+    <div class="row"><label>Folder <input name="folder" value="INBOX"></label><label>Look back (days) <input name="lookback" value="400" size="5"></label></div>
+    <button>Sync IMAP mailbox</button>
+    {% if last_imap %}<span class="muted">last sync {{ last_imap }}</span>{% endif %}
+  </form>
+  <hr>
+  <form method="post" action="/sync/gmail" class="inline">
+    <button {% if not gmail_ok %}disabled title="Put credentials.json in the data folder first (see README)"{% endif %}>Sync Gmail (OAuth)</button>
+    {% if last_gmail %}<span class="muted">last sync {{ last_gmail }}</span>{% endif %}
+  </form>
+  <form method="post" action="/import/eml" enctype="multipart/form-data" class="inline">
+    <input type="file" name="files" multiple accept=".eml,message/rfc822"> <button>Import .eml files</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>2. Add the bank charges</h2>
+  <p><a class="btn" href="/bank/quick">Paste the list accounting sent</a> &nbsp; <a class="btn" href="/bank/import">Import a statement CSV</a></p>
+  <h2>3. Match and review</h2>
+  <form method="post" action="/match/run" class="inline"><button>Run auto-match</button></form>
+  <a class="btn" href="/review">Open review queue ({{ counts.unmatched }})</a>
+  <h2>4. Send the package</h2>
+  <form method="get" action="/export/package" class="stack">
+    <div class="row">
+      <label>Account <select name="account"><option value="">all</option>{% for a in accounts %}<option>{{ a }}</option>{% endfor %}</select></label>
+      <label>From <input type="date" name="date_from"></label><label>To <input type="date" name="date_to"></label>
+    </div>
+    <button>Download zip (PDF per charge + CSV)</button> <a class="btn" href="/export/csv">CSV only</a>
+  </form>
+  <hr>
+  <form method="post" action="/invoices/download" class="stack">
+    <p class="muted">Official Amazon invoice PDFs need a signed-in browser. Run <code>python -m app.cli amazon-login</code> once, then:</p>
+    <div class="row">
+      <label>Scope <select name="scope"><option value="matched">matched orders</option><option value="all">all orders</option></select></label>
+      <label>Account <select name="account"><option value="">all</option>{% for a in accounts %}<option>{{ a }}</option>{% endfor %}</select></label>
+    </div>
+    <button {% if not playwright_ok %}disabled title="pip install playwright && playwright install chromium"{% endif %}>Download official invoice PDFs</button>
+    {% if not playwright_ok %}<span class="muted">Playwright not installed; the zip will contain generated summaries instead.</span>{% endif %}
+  </form>
+</section>
+</div>
+
+{% if unbilled %}
+<section class="card">
+  <h2>Shipments with no bank charge yet</h2>
+  <p class="muted">Charged to another card, not yet posted, or the statement line is missing. Newest first.</p>
+  <table>
+    <tr><th>Shipped</th><th>Order</th><th>Amount</th></tr>
+    {% for s in unbilled %}<tr><td>{{ s.shipped_date }}</td><td><a href="/orders?q={{ s.order_id }}">{{ s.order_id }}</a></td><td class="num">{{ s.total|money }} {{ s.currency }}</td></tr>{% endfor %}
+  </table>
+</section>
+{% endif %}
+{% endblock %}
