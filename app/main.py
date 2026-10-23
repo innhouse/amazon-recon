@@ -179,7 +179,7 @@ def orders(request: Request, q: str = ""):
         if q:
             where = "WHERE o.order_id LIKE ? OR EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.order_id AND i.description LIKE ?)"
             args = [f"%{q}%", f"%{q}%"]
-        rows = conn.execute(f"SELECT o.* FROM orders o {where} ORDER BY o.order_date DESC, o.order_id").fetchall()
+        rows = conn.execute(f"SELECT o.* FROM orders o {where} ORDER BY o.order_date DESC, o.order_id", args).fetchall()
         used = db.matched_ref_ids(conn, "shipment") | db.matched_ref_ids(conn, "order")
         data = []
         for o in rows:
@@ -401,3 +401,4 @@ def export_package(account: str = "", date_from: str = "", date_to: str = ""):
         data, stats = export.build_package(conn, account=account or None, date_from=date_from or None, date_to=date_to or None)
     name = f"amazon-invoices-{account or 'all'}-{date.today()}.zip".replace(" ", "_").replace("#", "")
     return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
