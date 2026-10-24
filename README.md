@@ -43,23 +43,29 @@ Typical monthly run:
 The **Charges** page also answers the question directly without any bank data:
 filter by card and date range and download the CSV of order numbers.
 
-## Official invoice PDFs
+## Official invoice PDFs (automatic)
 
-The zip uses the official Amazon invoice when it has been downloaded, otherwise
-a clearly labelled summary PDF generated from the email/report data.
+Amazon issues one invoice per shipment, so a 16-box order has 16 invoices, each
+matching one card charge. The fetcher opens Your Orders for each order, opens
+its **Invoice** menu and saves every "Invoice N" PDF. One-time setup:
 
-To download the official PDFs automatically (needs a signed-in browser):
-
-```bash
-pip install playwright && playwright install chromium
-python -m app.cli amazon-login          # sign in once in the window that opens, then close it
-python -m app.cli download-invoices     # fetches PDFs for all matched orders
+```powershell
+pip install playwright
+playwright install chromium
+python -m app.cli amazon-login      # a browser opens: sign in to the account that placed the orders, then close the window
 ```
 
-The login session is kept in `data/browser-profile`; no Amazon password is
-stored by the app. If Amazon asks to sign in again (or shows a captcha), run
-`amazon-login` again. The Business console also offers a bulk invoice download
-under Business Analytics, which is a fine manual alternative.
+Then, for a request like "invoices for card 3874, Oct 7 to Oct 17":
+
+```powershell
+python -m app.cli download-invoices --card 3874 --from 2026-10-07 --to 2026-10-17 --out "$HOME\Desktop\wendy"
+```
+
+The PDFs are copied to that folder (and kept under `data/invoices`); attach
+the folder's contents to the reply. Add `--visible` to watch the browser work.
+The login is kept in `data/browser-profile`, like a Chrome profile; no Amazon
+password is stored by the app. If Amazon asks to sign in again or shows a
+captcha, run `amazon-login` again.
 
 ## Mailbox setup
 

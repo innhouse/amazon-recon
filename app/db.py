@@ -33,6 +33,7 @@ CREATE TABLE IF NOT EXISTS shipments (
     card_last4      TEXT,              -- from the Amazon Business reconciliation report
     payer           TEXT,              -- "Account User" in the report
     payment_ref     TEXT,              -- "Payment Reference ID" in the report
+    charge_code     TEXT,              -- "Charge Identifier": the code printed on the card statement (AMAZON* 5E66L7HX2)
     created_at      TEXT NOT NULL,
     FOREIGN KEY (order_id) REFERENCES orders(order_id)
 );
@@ -46,6 +47,7 @@ CREATE TABLE IF NOT EXISTS refunds (
     source_message_id TEXT,
     source          TEXT NOT NULL DEFAULT 'email',
     card_last4      TEXT,
+    charge_code     TEXT,
     created_at      TEXT NOT NULL
 );
 
@@ -94,6 +96,14 @@ CREATE TABLE IF NOT EXISTS processed_messages (
     processed_at    TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS invoice_files (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id    TEXT NOT NULL,
+    path        TEXT NOT NULL UNIQUE,
+    label       TEXT,
+    created_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS kv (
     key   TEXT PRIMARY KEY,
     value TEXT
@@ -118,8 +128,8 @@ def _migrate(conn):
     """Add columns introduced after the first release to existing databases."""
     wanted = {
         "orders": {"invoice_pdf": "TEXT"},
-        "shipments": {"source": "TEXT NOT NULL DEFAULT 'email'", "card_last4": "TEXT", "payer": "TEXT", "payment_ref": "TEXT"},
-        "refunds": {"source": "TEXT NOT NULL DEFAULT 'email'", "card_last4": "TEXT"},
+        "shipments": {"source": "TEXT NOT NULL DEFAULT 'email'", "card_last4": "TEXT", "payer": "TEXT", "payment_ref": "TEXT", "charge_code": "TEXT"},
+        "refunds": {"source": "TEXT NOT NULL DEFAULT 'email'", "card_last4": "TEXT", "charge_code": "TEXT"},
     }
     for table, cols in wanted.items():
         have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
@@ -251,30 +261,41 @@ def upsert_report_charge(conn, row) -> str:
                       f"https://www.{row.marketplace}/gp/css/summary/print.html?orderID={row.order_id}")
     conn.execute("UPDATE orders SET order_date = COALESCE(order_date, ?), currency = COALESCE(currency, ?), buyer = COALESCE(buyer, ?) WHERE order_id = ?",
                  (row.order_date, row.currency, row.payer, row.order_id))
+    code = getattr(row, "charge_code", None)
     if row.is_refund:
         conn.execute(
-            """INSERT INTO refunds(refund_id, order_id, refund_date, total, currency, source, card_last4, created_at)
-               VALUES (?,?,?,?,?,'report',?,?)
-               ON CONFLICT(refund_id) DO UPDATE SET refund_date = excluded.refund_date, total = excluded.total, card_last4 = excluded.card_last4""",
-            (row.payment_ref, row.order_id, row.txn_date, row.amount, row.currency, row.card_last4, now_iso()))
+            """INSERT INTO refunds(refund_id, order_id, refund_date, total, currency, source, card_last4, charge_code, created_at)
+               VALUES (?,?,?,?,?,'report',?,?,?)
+               ON CONFLICT(refund_id) DO UPDATE SET refund_date = excluded.refund_date, total = excluded.total, card_last4 = excluded.card_last4,
+                 charge_code = COALESCE(excluded.charge_code, refunds.charge_code)""",
+            (row.payment_ref, row.order_id, row.txn_date, row.amount, row.currency, row.card_last4, code, now_iso()))
         return "refund"
     if conn.execute("SELECT 1 FROM shipments WHERE shipment_id = ?", (row.payment_ref,)).fetchone():
-        conn.execute("UPDATE shipments SET shipped_date = ?, total = ?, card_last4 = ?, payer = ? WHERE shipment_id = ?",
-                     (row.txn_date, row.amount, row.card_last4, row.payer, row.payment_ref))
+        conn.execute("UPDATE shipments SET shipped_date = ?, total = ?, card_last4 = ?, payer = ?, charge_code = COALESCE(?, charge_code) WHERE shipment_id = ?",
+                     (row.txn_date, row.amount, row.card_last4, row.payer, code, row.payment_ref))
         return "charge"
     # An email-derived shipment for the same order and amount without card info: enrich it.
     twin = conn.execute(
         """SELECT shipment_id FROM shipments WHERE order_id = ? AND source = 'email' AND card_last4 IS NULL
            AND ABS(total - ?) < 0.005 ORDER BY shipped_date LIMIT 1""", (row.order_id, row.amount)).fetchone()
     if twin:
-        conn.execute("UPDATE shipments SET card_last4 = ?, payer = ?, payment_ref = ?, shipped_date = ? WHERE shipment_id = ?",
-                     (row.card_last4, row.payer, row.payment_ref, row.txn_date, twin["shipment_id"]))
+        conn.execute("UPDATE shipments SET card_last4 = ?, payer = ?, payment_ref = ?, shipped_date = ?, charge_code = COALESCE(?, charge_code) WHERE shipment_id = ?",
+                     (row.card_last4, row.payer, row.payment_ref, row.txn_date, code, twin["shipment_id"]))
         return "merged"
     conn.execute(
-        """INSERT INTO shipments(shipment_id, order_id, shipped_date, total, currency, source, card_last4, payer, payment_ref, created_at)
-           VALUES (?,?,?,?,?,'report',?,?,?,?)""",
-        (row.payment_ref, row.order_id, row.txn_date, row.amount, row.currency, row.card_last4, row.payer, row.payment_ref, now_iso()))
+        """INSERT INTO shipments(shipment_id, order_id, shipped_date, total, currency, source, card_last4, payer, payment_ref, charge_code, created_at)
+           VALUES (?,?,?,?,?,'report',?,?,?,?,?)""",
+        (row.payment_ref, row.order_id, row.txn_date, row.amount, row.currency, row.card_last4, row.payer, row.payment_ref, code, now_iso()))
     return "charge"
+
+
+def add_invoice_file(conn, order_id, path, label=None):
+    conn.execute("INSERT OR IGNORE INTO invoice_files(order_id, path, label, created_at) VALUES (?,?,?,?)",
+                 (order_id, path, label, now_iso()))
+
+
+def invoice_files(conn, order_id):
+    return [r["path"] for r in conn.execute("SELECT path FROM invoice_files WHERE order_id = ? ORDER BY label, id", (order_id,))]
 
 
 def mark_processed(conn, message_id, source, outcome, detail=None):

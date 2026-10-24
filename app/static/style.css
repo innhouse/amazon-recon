@@ -1,9 +1,12 @@
 :root { --bg:#f6f7f9; --card:#fff; --ink:#1d2330; --muted:#6b7280; --line:#e3e6ea; --ok:#e7f6ec; --okink:#1e7b3e; --warn:#fff4e0; --warnink:#9a5b00; --brand:#232f3e; --accent:#ff9900; }
 * { box-sizing:border-box }
 body { margin:0; font:15px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif; color:var(--ink); background:var(--bg) }
-header { background:var(--brand); color:#fff; padding:10px 20px; display:flex; align-items:center; gap:24px; flex-wrap:wrap }
+header { background:var(--brand); color:#fff; padding:12px 20px; display:flex; align-items:center; gap:28px; flex-wrap:wrap }
 header .brand { color:#fff; font-weight:700; text-decoration:none }
-header nav a { color:#dfe3e8; text-decoration:none; margin-right:14px } header nav a:hover { color:var(--accent) }
+header nav { display:flex; gap:8px; flex-wrap:wrap }
+header nav a.navbtn { color:#fff; text-decoration:none; padding:8px 16px; border-radius:8px; border:1px solid rgba(255,255,255,.35); background:rgba(255,255,255,.08); font-weight:600; font-size:15px }
+header nav a.navbtn:hover { background:rgba(255,255,255,.18); border-color:#fff }
+header nav a.navbtn.active { background:var(--accent); border-color:var(--accent); color:#1d2330 }
 main { max-width:1200px; margin:0 auto; padding:20px 16px }
 h1 { font-size:22px; margin:0 0 12px } h2 { font-size:16px; margin:14px 0 8px }
 .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin:12px 0 }

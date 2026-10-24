@@ -86,3 +86,18 @@ def test_unmatch_frees_shipment(conn):
     matcher.run_auto_match(conn)
     db.delete_match(conn, a)
     assert matcher.run_auto_match(conn)["matched"] == 1
+
+
+def test_shipment_level_report_and_statement_code(conn):
+    from app.sources import amazon_report
+    stats, errors = amazon_report.import_shipment_report(conn, (FIX / "shipment_report.csv").read_bytes())
+    assert not errors and stats["charge"] == 3          # the pending shipment is skipped
+    row = conn.execute("SELECT charge_code, total FROM shipments WHERE shipment_id = 'REF003'").fetchone()
+    assert row["charge_code"] == "5E67Y2LA2" and row["total"] == 42.12
+    item = conn.execute("SELECT description, quantity FROM order_items WHERE shipment_id = 'REF003'").fetchone()
+    assert item["description"] == "Shower rod flange set" and item["quantity"] == 6
+    # A statement line with the code matches exactly, even with the wrong date and no card.
+    t = txn(conn, "2026-10-20", 42.12, account="RBC Visa", desc="AMAZON* 5E67Y2LA2 VANCOUVER BC")
+    assert matcher.run_auto_match(conn)["matched"] == 1
+    m = conn.execute("SELECT * FROM matches").fetchone()
+    assert m["method"] == "statement_code" and m["ref_ids"] == '["REF003"]'

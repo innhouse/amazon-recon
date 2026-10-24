@@ -9,7 +9,7 @@
     <div class="num"><b>{{ d.o.total|money }} {{ d.o.currency or '' }}</b></div>
   </div>
   <div class="links">
-    {% if d.o.invoice_url %}<a href="{{ d.o.invoice_url }}" target="_blank">Official invoice page</a>{% endif %}
+    <a href="https://www.{{ d.o.marketplace or 'amazon.ca' }}/gp/your-account/order-history?search={{ d.o.order_id }}" target="_blank" title="Opens Your Orders on Amazon with this order searched; click its Invoice button there. You must be signed in to the account that placed the order.">Find on Amazon (then click Invoice)</a>
     <a href="/invoices/{{ d.o.order_id }}.pdf" target="_blank">{% if d.o.invoice_pdf %}Official PDF{% else %}Summary PDF{% endif %}</a>
   </div>
   {% if d.ships %}

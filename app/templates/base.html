@@ -8,15 +8,13 @@
 </head>
 <body>
 <header>
-  <a class="brand" href="/">Amazon invoice reconciliation</a>
+  <a class="brand" href="/">Amazon invoices</a>
+  {% set path = request.url.path %}
   <nav>
-    <a href="/">Dashboard</a>
-    <a href="/orders">Orders</a>
-    <a href="/charges">Charges</a>
-    <a href="/bank">Bank lines</a>
-    <a href="/bank/quick">Paste charges</a>
-    <a href="/bank/import">Import CSV</a>
-    <a href="/review">Review</a>
+    <a href="/" class="navbtn {% if path == '/' %}active{% endif %}">Home</a>
+    <a href="/charges" class="navbtn {% if path.startswith('/charges') %}active{% endif %}">Charges</a>
+    <a href="/orders" class="navbtn {% if path.startswith('/orders') %}active{% endif %}">Orders</a>
+    <a href="/advanced" class="navbtn {% if path.startswith('/advanced') or path.startswith('/bank') or path.startswith('/review') %}active{% endif %}">Advanced</a>
   </nav>
 </header>
 <main>

@@ -66,15 +66,7 @@
     <button>Download zip (PDF per charge + CSV)</button> <a class="btn" href="/export/csv">CSV only</a>
   </form>
   <hr>
-  <form method="post" action="/invoices/download" class="stack">
-    <p class="muted">Official Amazon invoice PDFs need a signed-in browser. Run <code>python -m app.cli amazon-login</code> once, then:</p>
-    <div class="row">
-      <label>Scope <select name="scope"><option value="matched">matched orders</option><option value="all">all orders</option></select></label>
-      <label>Account <select name="account"><option value="">all</option>{% for a in accounts %}<option>{{ a }}</option>{% endfor %}</select></label>
-    </div>
-    <button {% if not playwright_ok %}disabled title="pip install playwright && playwright install chromium"{% endif %}>Download official invoice PDFs</button>
-    {% if not playwright_ok %}<span class="muted">Playwright not installed; the zip will contain generated summaries instead.</span>{% endif %}
-  </form>
+  <p><b>Official invoice PDFs</b> are fetched from the <a href="/charges">Charges</a> page: filter a card and date range, then use the Sign in / Fetch / Download zip buttons there.</p>
 </section>
 </div>
 

@@ -16,7 +16,7 @@ from . import config, db, export
 from .bank import importer, quick
 from .invoices import fetcher
 from .recon import matcher
-from .sources import amazon_report, amazon_transactions, eml_source, gmail_source, imap_source
+from .sources import amazon_orders_report, amazon_report, amazon_transactions, eml_source, gmail_source, imap_source
 
 BASE = Path(__file__).parent
 app = FastAPI(title="Amazon invoice reconciliation")
@@ -44,6 +44,21 @@ def redirect(url: str, flash: str | None = None):
 # ---------- dashboard ----------
 
 @app.get("/", response_class=HTMLResponse)
+def home(request: Request):
+    with db.session() as conn:
+        orders = [r[0] for r in conn.execute("SELECT order_id FROM orders")]
+        with_pdf = sum(1 for o in orders if any(Path(f).exists() for f in db.invoice_files(conn, o)))
+        pdfs = sum(1 for r in conn.execute("SELECT path FROM invoice_files") if Path(r[0]).exists())
+        stats = {"orders": len(orders), "orders_with_pdf": with_pdf, "pdfs": pdfs,
+                 "charges": conn.execute("SELECT COUNT(*) FROM shipments").fetchone()[0]}
+        cards = [r[0] for r in conn.execute("SELECT DISTINCT card_last4 FROM shipments WHERE card_last4 IS NOT NULL ORDER BY 1")]
+        last_import = db.kv_get(conn, "last_report_import")
+        last_fetch = db.kv_get(conn, "last_invoice_fetch")
+    return render(request, "home.html", stats=stats, cards=cards, last_import=last_import, last_fetch=last_fetch,
+                  playwright_ok=fetcher.playwright_available())
+
+
+@app.get("/advanced", response_class=HTMLResponse)
 def dashboard(request: Request):
     with db.session() as conn:
         counts = {
@@ -102,22 +117,38 @@ async def import_eml(files: list[UploadFile] = File(...)):
 
 
 @app.post("/import/amazon-report")
-async def import_amazon_report(file: UploadFile = File(...), marketplace: str = Form("amazon.ca")):
-    content = await file.read()
+async def import_amazon_report(file: UploadFile = File(None), marketplace: str = Form("amazon.ca")):
+    content = await file.read() if file else b""
+    if not content:
+        return redirect("/", "No file chosen. Click 'Choose File' next to CSV, pick the reconciliation report, then Import report.")
+    import csv as _csv, io as _io
+    header = next(_csv.reader(_io.StringIO(content.decode("utf-8-sig", errors="replace"))), [])
     try:
         with db.session() as conn:
-            stats, errors = amazon_report.import_report(conn, content, marketplace=marketplace)
+            if amazon_report.looks_like_shipment_report(header):
+                stats, errors = amazon_report.import_shipment_report(conn, content, marketplace=marketplace)
+                kind = "Shipment-level reconciliation report"
+                db.kv_set(conn, "last_report_import", date.today().isoformat())
+            elif amazon_orders_report.looks_like_orders_report(header):
+                stats, errors = amazon_orders_report.import_orders_report(conn, content, marketplace=marketplace)
+                kind = "Orders report"
+            else:
+                stats, errors = amazon_report.import_report(conn, content, marketplace=marketplace)
+                kind = "Reconciliation report"
+                db.kv_set(conn, "last_report_import", date.today().isoformat())
             summary = matcher.run_auto_match(conn)
     except ValueError as exc:
         return redirect("/", str(exc))
-    msg = f"Reconciliation report imported ({stats.summary()}). Auto-match: {summary['matched']} matched, {summary['ambiguous']} need review."
+    msg = f"{kind} imported: {stats.summary()}."
     if errors:
         msg += f" {len(errors)} rows skipped: " + "; ".join(errors[:3])
-    return redirect("/orders", msg)
+    return redirect("/", msg)
 
 
 @app.post("/import/amazon-transactions")
-def import_amazon_transactions(text: str = Form(...), marketplace: str = Form("amazon.ca"), card_hint: str = Form("")):
+def import_amazon_transactions(text: str = Form(""), marketplace: str = Form("amazon.ca"), card_hint: str = Form("")):
+    if not text.strip():
+        return redirect("/", "The Transactions box was empty. To import the Business report, use the 'CSV' file box at the top of the dashboard.")
     with db.session() as conn:
         stats, errors = amazon_transactions.import_text(conn, text, marketplace=marketplace, card_hint=card_hint or None)
         summary = matcher.run_auto_match(conn)
@@ -146,7 +177,20 @@ def charges(request: Request, card: str = "", date_from: str = "", date_to: str 
                                 ORDER BY s.shipped_date DESC, s.order_id""", args).fetchall()
         cards = [r[0] for r in conn.execute("SELECT DISTINCT card_last4 FROM shipments WHERE card_last4 IS NOT NULL ORDER BY 1")]
         total = sum(r["total"] or 0 for r in rows)
-    return render(request, "charges.html", rows=rows, cards=cards, card=card, date_from=date_from, date_to=date_to, total=total)
+        order_ids = {r["order_id"] for r in rows}
+        pdf_counts = {oid: sum(1 for f in db.invoice_files(conn, oid) if Path(f).exists()) for oid in order_ids}
+        items = {}
+        for r in rows:
+            # Prefer the item shipped on this exact charge; fall back to the order's items.
+            its = conn.execute("SELECT description, quantity FROM order_items WHERE shipment_id = ? ORDER BY id", (r["shipment_id"],)).fetchall()
+            if not its:
+                its = conn.execute("SELECT description, quantity FROM order_items WHERE order_id = ? AND shipment_id IS NULL ORDER BY id", (r["order_id"],)).fetchall()
+            if its:
+                first = f"{its[0]['quantity']}x {its[0]['description'][:60]}"
+                items[r["shipment_id"]] = first + (f" (+{len(its) - 1} more)" if len(its) > 1 else "")
+    return render(request, "charges.html", rows=rows, cards=cards, card=card, date_from=date_from, date_to=date_to, total=total,
+                  pdf_counts=pdf_counts, items=items, pdf_total=sum(pdf_counts.values()), orders_without=sum(1 for v in pdf_counts.values() if not v),
+                  playwright_ok=fetcher.playwright_available())
 
 
 @app.get("/charges.csv")
@@ -160,10 +204,10 @@ def charges_csv(card: str = "", date_from: str = "", date_to: str = ""):
             where.append("s.shipped_date >= ?"); args.append(date_from)
         if date_to:
             where.append("s.shipped_date <= ?"); args.append(date_to)
-        rows = conn.execute(f"""SELECT s.shipped_date, s.card_last4, s.total, s.currency, s.order_id, o.order_date, s.payer, s.payment_ref, o.invoice_url
+        rows = conn.execute(f"""SELECT s.shipped_date, s.card_last4, s.charge_code, s.total, s.currency, s.order_id, o.order_date, s.payer, s.payment_ref, o.invoice_url
                                 FROM shipments s JOIN orders o USING(order_id) WHERE {' AND '.join(where)} ORDER BY s.shipped_date, s.order_id""", args).fetchall()
     buf = io.StringIO(); w = csv.writer(buf)
-    w.writerow(["charge_date", "card", "amount", "currency", "order_id", "order_date", "account_user", "payment_ref", "invoice_url"])
+    w.writerow(["charge_date", "card", "statement_code", "amount", "currency", "order_id", "order_date", "account_user", "payment_ref", "invoice_url"])
     for r in rows:
         w.writerow(list(r))
     name = f"amazon-charges-{card or 'all'}-{date_from or 'start'}-{date_to or 'end'}.csv"
@@ -217,6 +261,18 @@ def bank_import_form(request: Request):
 async def bank_import_preview(request: Request, file: UploadFile = File(...), account: str = Form(""), currency: str = Form("CAD")):
     content = await file.read()
     rows = importer.read_rows(content)
+    header = rows[0] if rows else []
+    if amazon_report.looks_like_shipment_report(header) or amazon_report.looks_like_report(header) or amazon_orders_report.looks_like_orders_report(header):
+        # An Amazon report was dropped into the bank-statement box: import it as a report instead.
+        with db.session() as conn:
+            if amazon_report.looks_like_shipment_report(header):
+                stats, errors = amazon_report.import_shipment_report(conn, content)
+            elif amazon_orders_report.looks_like_orders_report(header):
+                stats, errors = amazon_orders_report.import_orders_report(conn, content)
+            else:
+                stats, errors = amazon_report.import_report(conn, content)
+            db.kv_set(conn, "last_report_import", date.today().isoformat())
+        return redirect("/", f"That file is an Amazon report, so it was imported as one: {stats.summary()}. Bank statements go in this box; Amazon reports go in Step 1 on the Home page.")
     try:
         m = importer.detect_mapping(rows)
         error = None
@@ -261,7 +317,9 @@ def quick_form(request: Request):
 
 
 @app.post("/bank/quick")
-def quick_submit(text: str = Form(...), account: str = Form(...), currency: str = Form("CAD")):
+def quick_submit(text: str = Form(""), account: str = Form(""), currency: str = Form("CAD")):
+    if not text.strip() or not account.strip():
+        return redirect("/bank/quick", "Both the account label and at least one charge line are required.")
     txns, errors = quick.parse_quick_lines(text, account=account.strip(), currency=currency)
     inserted = 0
     with db.session() as conn:
@@ -368,6 +426,88 @@ def invoices_download(scope: str = Form("matched"), account: str = Form(""), hea
     return redirect("/orders", msg)
 
 
+# The browser automation (Playwright) cannot run inside the web server's own
+# process on Windows, so these two routes start it as a separate process using
+# the same command-line tool a terminal user would run.
+
+def _cli(*args, wait: bool, timeout: int = 3600):
+    import subprocess, sys
+    cmd = [sys.executable, "-m", "app.cli", *args]
+    if not wait:
+        subprocess.Popen(cmd, cwd=str(config.BASE_DIR))
+        return None
+    return subprocess.run(cmd, cwd=str(config.BASE_DIR), capture_output=True, text=True, timeout=timeout)
+
+
+@app.post("/amazon/login")
+def amazon_login(marketplace: str = Form("amazon.ca"), back: str = Form("/")):
+    """Open a visible browser on this computer for the one-time Amazon sign-in."""
+    if not fetcher.playwright_available():
+        return redirect(back, "Playwright is not installed. In PowerShell: pip install \"playwright==1.49.1\" then python -m playwright install chromium")
+    _cli("amazon-login", "--marketplace", marketplace, wait=False)
+    return redirect(back, "A browser window is opening on this computer. Sign in to the Amazon account that placed the orders, wait for Your Orders, then close that window.")
+
+
+@app.post("/invoices/fetch")
+def invoices_fetch(card: str = Form(""), date_from: str = Form(""), date_to: str = Form(""), visible: int = Form(0), back: str = Form("")):
+    """Fetch every invoice PDF for the charges matching the filter (runs the browser on this computer)."""
+    q = f"card={card}&date_from={date_from}&date_to={date_to}"
+    target = back or f"/charges?{q}"
+    if not fetcher.playwright_available():
+        return redirect(target, "Playwright is not installed. In PowerShell: pip install \"playwright==1.49.1\" then python -m playwright install chromium")
+    with db.session() as conn:
+        ids = fetcher.orders_for_filter(conn, card=card or None, date_from=date_from or None, date_to=date_to or None)
+        todo = [o for o in ids if not any(Path(f).exists() for f in db.invoice_files(conn, o))]
+    if not todo:
+        return redirect(target, f"All {len(ids)} orders already have their invoices.")
+    args = ["download-invoices"]
+    for o in todo:
+        args += ["--order", o]
+    if visible:
+        args.append("--visible")
+    try:
+        proc = _cli(*args, wait=True)
+    except Exception as exc:
+        return redirect(target, f"Could not start the fetch: {exc}")
+    lines = [l for l in (proc.stdout or "").splitlines() if l.strip()]
+    results = {}
+    for l in lines:
+        parts = l.split(" ", 1)
+        if len(parts) == 2 and parts[0].count("-") == 2 and parts[0][:3].isdigit():
+            results[parts[0]] = parts[1]
+    ok = sum(1 for v in results.values() if v.startswith("ok"))
+    bad = {k: v for k, v in results.items() if not v.startswith("ok")}
+    msg = f"{len(ids)} orders in this filter, {len(ids) - len(todo)} already had invoices, {ok} fetched now."
+    if bad:
+        msg += " Problems: " + "; ".join(f"{k}: {v}" for k, v in list(bad.items())[:4])
+        if any("signed-out" in v for v in bad.values()):
+            msg += " Click 'Sign in to Amazon' first."
+    if proc.returncode != 0 and not results:
+        err = (proc.stderr or "").strip()
+        tail = [l for l in err.splitlines() if l.strip() and not l.strip().startswith(("-", "<", "Call log", "at "))]
+        msg += " The fetch failed: " + (tail[-1] if tail else err[-300:])
+    with db.session() as conn:
+        db.kv_set(conn, "last_invoice_fetch", f"{date.today().isoformat()} ({ok} orders fetched)")
+    return redirect(target, msg)
+
+
+@app.get("/charges/invoices.zip")
+def charges_invoices_zip(card: str = "", date_from: str = "", date_to: str = ""):
+    """All fetched invoice PDFs for the filter in one zip to attach to an email (invoices only)."""
+    import io, zipfile
+    with db.session() as conn:
+        ids = fetcher.orders_for_filter(conn, card=card or None, date_from=date_from or None, date_to=date_to or None)
+        buf = io.BytesIO()
+        n = 0
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for oid in ids:
+                for f in db.invoice_files(conn, oid):
+                    if Path(f).exists():
+                        z.write(f, Path(f).name); n += 1
+    name = f"amazon-invoices-card{card or 'all'}-{date_from or 'start'}-to-{date_to or 'end'}.zip"
+    return Response(buf.getvalue(), media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @app.get("/invoices/{order_id}.pdf")
 def invoice_pdf(order_id: str):
     with db.session() as conn:
@@ -401,4 +541,3 @@ def export_package(account: str = "", date_from: str = "", date_to: str = ""):
         data, stats = export.build_package(conn, account=account or None, date_from=date_from or None, date_to=date_to or None)
     name = f"amazon-invoices-{account or 'all'}-{date.today()}.zip".replace(" ", "_").replace("#", "")
     return Response(data, media_type="application/zip", headers={"Content-Disposition": f'attachment; filename="{name}"'})
-

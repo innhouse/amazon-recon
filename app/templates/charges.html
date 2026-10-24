@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>Amazon card charges <span class="muted">({{ rows|length }}, total {{ total|money }})</span></h1>
-<p class="muted">What Amazon says it charged, per card. Use this to answer "which invoices go with card X between these dates".</p>
+<h1>Charges{% if card %} on card {{ card }}{% endif %}{% if date_from or date_to %}, {{ date_from or 'start' }} to {{ date_to or 'today' }}{% endif %}
+  <span class="muted">({{ rows|length }} charges, {{ total|money }})</span></h1>
 <form method="get" class="inline">
   <label>Card <select name="card"><option value="">all</option>{% for c in cards %}<option {% if c == card %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></label>
   <label>From <input type="date" name="date_from" value="{{ date_from }}"></label>
@@ -9,15 +9,33 @@
   <button>Filter</button>
   <a class="btn" href="/charges.csv?card={{ card }}&date_from={{ date_from }}&date_to={{ date_to }}">Download CSV</a>
 </form>
+<section class="card">
+  {% if orders_without == 0 and rows %}
+    <p><b>All {{ pdf_total }} invoices for these charges are stored.</b></p>
+    <a class="btn" href="/charges/invoices.zip?card={{ card }}&date_from={{ date_from }}&date_to={{ date_to }}">Download the {{ pdf_total }} invoices as one zip</a>
+    <span class="muted small">Attach the zip (or the PDFs inside it) to your reply.</span>
+  {% elif rows %}
+    <p><b>{{ orders_without }} order{{ 's' if orders_without != 1 else '' }} in this range still need{{ '' if orders_without != 1 else 's' }} invoices</b> ({{ pdf_total }} PDFs stored so far).</p>
+    <form method="post" action="/invoices/fetch" class="inline">
+      <input type="hidden" name="card" value="{{ card }}"><input type="hidden" name="date_from" value="{{ date_from }}"><input type="hidden" name="date_to" value="{{ date_to }}">
+      <label><input type="checkbox" name="visible" value="1"> show the browser</label>
+      <button {% if not playwright_ok %}disabled{% endif %}>Fetch the missing invoices</button>
+    </form>
+    <a class="btn" href="/charges/invoices.zip?card={{ card }}&date_from={{ date_from }}&date_to={{ date_to }}">Download what is stored so far</a>
+    <p class="muted small">Fetching takes up to a minute per large order; the page returns when done. If it reports "signed-out", use "Sign in to Amazon again" on the Home page.</p>
+  {% else %}
+    <p class="muted">No charges match. Check the card and dates, or import a newer report on the Home page.</p>
+  {% endif %}
+</section>
 <table>
-  <tr><th>Charged</th><th>Card</th><th class="num">Amount</th><th>Order</th><th>Ordered</th><th>User</th><th>Source</th><th>Bank</th><th>Invoice</th></tr>
+  <tr><th>Charge date</th><th>Card</th><th>On statement as</th><th class="num">Amount</th><th>Order number</th><th>What was bought</th><th>Invoices stored</th><th>Links</th></tr>
   {% for r in rows %}
   <tr class="{% if r.matched %}ok{% endif %}">
-    <td>{{ r.shipped_date }}</td><td>{{ r.card_last4 or '' }}</td><td class="num">{{ r.total|money }} {{ r.currency }}</td>
-    <td><a href="/orders?q={{ r.order_id }}">{{ r.order_id }}</a></td><td>{{ r.order_date or '' }}</td><td>{{ r.payer or '' }}</td>
-    <td class="small muted">{{ r.source }}</td><td>{{ 'matched' if r.matched else '' }}</td>
-    <td>{% if r.invoice_url %}<a href="{{ r.invoice_url }}" target="_blank">official</a>{% endif %} <a href="/invoices/{{ r.order_id }}.pdf" target="_blank">{{ 'PDF' if r.invoice_pdf else 'summary' }}</a></td>
+    <td>{{ r.shipped_date }}</td><td>{{ r.card_last4 or '' }}</td><td class="mono">{% if r.charge_code %}AMAZON* {{ r.charge_code }}{% endif %}</td><td class="num">{{ r.total|money }} {{ r.currency }}</td>
+    <td><a href="/orders?q={{ r.order_id }}">{{ r.order_id }}</a></td><td class="small">{{ items.get(r.shipment_id, '') }}</td>
+    <td>{% if pdf_counts.get(r.order_id) %}<span class="pill ok">{{ pdf_counts[r.order_id] }} stored</span>{% else %}<span class="pill" style="background:#fff4e0;color:#9a5b00">none yet</span>{% endif %}</td>
+    <td><a href="https://www.{{ r.marketplace or 'amazon.ca' }}/gp/your-account/order-history?search={{ r.order_id }}" target="_blank" title="Opens this order on Amazon">open on Amazon</a>{% if r.invoice_pdf %} · <a href="/invoices/{{ r.order_id }}.pdf" target="_blank">view PDF</a>{% endif %}</td>
   </tr>
-  {% else %}<tr><td colspan="9" class="muted">No charges yet. Import the reconciliation report or sync a mailbox.</td></tr>{% endfor %}
+  {% else %}<tr><td colspan="8" class="muted">No charges in this range.</td></tr>{% endfor %}
 </table>
 {% endblock %}

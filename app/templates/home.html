@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Amazon invoices{% endblock %}
+{% block content %}
+<h1>Amazon invoices</h1>
+
+<section class="card">
+  <h2>Step 1 · Keep the Amazon data up to date <span class="muted small">(once a month)</span></h2>
+  <div class="row between">
+    <div>
+      <p><b>{{ stats.charges }}</b> card charges on file across <b>{{ stats.orders }}</b> orders.
+        Last report imported: <b>{{ last_import or 'never' }}</b>.</p>
+      <form method="post" action="/import/amazon-report" enctype="multipart/form-data" class="row">
+        <label>Amazon Business report (CSV from Business Analytics → Reports: Reconciliation, and optionally Orders for item names)
+          <input type="file" name="file" accept=".csv,text/csv" required></label>
+        <input type="hidden" name="marketplace" value="amazon.ca">
+        <button>Import report</button>
+      </form>
+    </div>
+  </div>
+  <hr>
+  <div class="row between">
+    <div>
+      <p><b>{{ stats.orders_with_pdf }}</b> of <b>{{ stats.orders }}</b> orders have their invoice PDFs stored
+        ({{ stats.pdfs }} PDFs). Last fetch: <b>{{ last_fetch or 'never' }}</b>.</p>
+      <form method="post" action="/invoices/fetch" class="row">
+        <input type="hidden" name="card" value=""><input type="hidden" name="date_from" value=""><input type="hidden" name="date_to" value="">
+        <input type="hidden" name="back" value="/">
+        <label><input type="checkbox" name="visible" value="1"> show the browser while it works</label>
+        <button {% if not playwright_ok %}disabled{% endif %}>Fetch missing invoices ({{ stats.orders - stats.orders_with_pdf }} orders)</button>
+      </form>
+      <form method="post" action="/amazon/login" class="inline">
+        <input type="hidden" name="back" value="/">
+        <button class="small" {% if not playwright_ok %}disabled{% endif %}>Sign in to Amazon again</button>
+        <span class="muted small">Only needed if a fetch reports "signed-out".</span>
+      </form>
+      {% if not playwright_ok %}<p class="warn small">Browser automation is not installed on this computer, so invoices cannot be fetched here.</p>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Step 2 · Answer an invoice request</h2>
+  <p class="muted">Pick the card and the dates from accounting's email. The list shows every Amazon charge in that range and whether its invoice is stored.</p>
+  <form method="get" action="/charges" class="row">
+    <label>Card <select name="card" required>{% for c in cards %}<option value="{{ c }}">{{ c }}</option>{% endfor %}</select></label>
+    <label>From <input type="date" name="date_from" required></label>
+    <label>To <input type="date" name="date_to" required></label>
+    <button>Show charges</button>
+  </form>
+</section>
+
+<p class="muted small">Bank-statement matching, personal-account import and email sync live under <a href="/advanced">Advanced</a>.</p>
+{% endblock %}

@@ -79,12 +79,33 @@ def _card_bonus(card: str | None, row) -> float:
     return 0.1 if (card and other and card == other) else 0.0
 
 
+STATEMENT_CODE_RE = re.compile(r"AM(?:AZON|ZN)(?:\.CA|\.COM)?\s*(?:MKTP\s*CA)?\*\s*([A-Z0-9]{7,12})\b", re.I)
+
+
+def statement_code(description: str | None) -> str | None:
+    """The code Amazon prints on the card statement: 'AMAZON* 5E66L7HX2' -> '5E66L7HX2'."""
+    m = STATEMENT_CODE_RE.search(description or "")
+    return m.group(1).upper() if m else None
+
+
 def candidates_for(conn, txn, *, used_shipments, used_orders, used_refunds, include_all=False) -> list[Candidate]:
     """Compute match candidates for a bank transaction row (sqlite Row or dict)."""
     txn_date = _d(txn["txn_date"])
     out: list[Candidate] = []
     B, A = config.MATCH_SHIPMENT_WINDOW_BEFORE, config.MATCH_SHIPMENT_WINDOW_AFTER
     card = card_of(txn)
+
+    # 0. The statement code is a unique key: AMAZON* 5E66L7HX2 is exactly one shipment or refund.
+    code = statement_code(txn["description"])
+    if code:
+        s = conn.execute("SELECT * FROM shipments WHERE UPPER(charge_code) = ?", (code,)).fetchone()
+        if s and s["shipment_id"] not in used_shipments:
+            return [Candidate("shipment", [s["shipment_id"]], s["order_id"], "statement_code", 1.0,
+                              f"Statement code {code}: order {s['order_id']}", s["shipped_date"])]
+        r = conn.execute("SELECT * FROM refunds WHERE UPPER(charge_code) = ?", (code,)).fetchone()
+        if r and r["refund_id"] not in used_refunds:
+            return [Candidate("refund", [r["refund_id"]], r["order_id"], "statement_code", 1.0,
+                              f"Statement code {code}: refund on order {r['order_id']}", r["refund_date"])]
 
     if txn["amount"] is None:
         # Date-only request (accounting sent a list of charge dates without amounts):

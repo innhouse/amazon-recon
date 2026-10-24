@@ -43,3 +43,23 @@ def test_transactions_paste_route(client):
     r = client.post("/import/amazon-transactions", data={"text": text, "marketplace": "amazon.ca", "card_hint": ""})
     assert "Transactions page imported" in r.text
     assert "701-5120229-1371409" in client.get("/charges?card=3874").text
+
+
+def test_orders_search(client):
+    r = client.post("/import/amazon-report", files={"file": ("report.csv", (FIX / "report.csv").read_bytes(), "text/csv")}, data={"marketplace": "amazon.ca"})
+    r = client.get("/orders?q=701-0000001-0000001")
+    assert r.status_code == 200 and "701-0000001-0000001" in r.text and "701-0000002-0000002" not in r.text
+
+
+def test_orders_report_import_adds_items(client):
+    client.post("/import/amazon-report", files={"file": ("report.csv", (FIX / "report.csv").read_bytes(), "text/csv")}, data={"marketplace": "amazon.ca"})
+    orders_csv = (
+        "Order Date,Order ID,Account Group,Currency,Order net total,Account User,Payment Reference ID,Payment Amount,Payment Identifier,Title,Purchase PPU,Item Quantity\n"
+        '2026/10/15,701-0000001-0000001,"Example Ltd",CAD,"106.39",Pat Example,REF001,"106.39",="3874","Vanity light 48 inch","94.99",1\n'
+        '2026/10/12,701-0000002-0000002,"Example Ltd",CAD,"154.44",Pat Example,REF002,"56.16",="3874","Shower rod flange set","6.27",22\n'
+        '2026/10/12,701-0000002-0000002,"Example Ltd",CAD,"154.44",Pat Example,REF003,"42.12",="3874","Shower rod flange set","6.27",22\n'
+    ).encode()
+    r = client.post("/import/amazon-report", files={"file": ("orders.csv", orders_csv, "text/csv")}, data={"marketplace": "amazon.ca"})
+    assert "Orders report imported" in r.text and "items: 2" in r.text
+    page = client.get("/charges?card=3874").text
+    assert "Vanity light" in page and "22x Shower rod" in page

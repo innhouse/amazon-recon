@@ -8,7 +8,7 @@ import re
 import zipfile
 from pathlib import Path
 
-from . import config
+from . import config, db
 from .invoices.summary_pdf import build_summary_pdf
 
 SUMMARY_DIR = config.DATA_DIR / "summaries"
@@ -69,9 +69,17 @@ def build_package(conn, *, account: str | None = None, date_from: str | None = N
             o = conn.execute("SELECT * FROM orders WHERE order_id = ?", (r["order_id"],)).fetchone()
             amt = f"{r['amount']:.2f}" if r["amount"] is not None else "unknown"
             base = f"{r['txn_date']}_{amt}_{o['order_id']}"
-            if o["invoice_pdf"] and Path(o["invoice_pdf"]).exists():
-                z.write(o["invoice_pdf"], f"invoices/{base}_official.pdf")
-                stats["official_pdfs"] += 1
+            files = [f for f in db.invoice_files(conn, o["order_id"]) if Path(f).exists()]
+            if not files and o["invoice_pdf"] and Path(o["invoice_pdf"]).exists():
+                files = [o["invoice_pdf"]]
+            if files:
+                seen_names = set()
+                for f in files:
+                    name = f"invoices/{o['order_id']}/{Path(f).name}"
+                    if name not in seen_names and name not in z.namelist():
+                        z.write(f, name)
+                        seen_names.add(name)
+                        stats["official_pdfs"] += 1
             else:
                 refs = json.loads(r["ref_ids"])
                 ships = conn.execute("SELECT * FROM shipments WHERE order_id = ? ORDER BY shipped_date", (o["order_id"],)).fetchall()

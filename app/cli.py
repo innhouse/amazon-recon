@@ -30,7 +30,13 @@ def main(argv=None):
     s = sub.add_parser("import-bank"); s.add_argument("file"); s.add_argument("--account", default=None); s.add_argument("--currency", default="CAD")
     sub.add_parser("match")
     s = sub.add_parser("amazon-login"); s.add_argument("--marketplace", default="amazon.ca")
+    s.add_argument("--account", default="business", help="business (default) or personal: separate sign-ins")
     s = sub.add_parser("download-invoices"); s.add_argument("--all", action="store_true"); s.add_argument("--visible", action="store_true")
+    s.add_argument("--card", default=None, help="only orders charged to this card (last 4 digits)")
+    s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None)
+    s.add_argument("--out", default=None, help="folder to copy the PDFs into (e.g. a folder to attach from)")
+    s.add_argument("--order", action="append", default=[], help="fetch this order only (repeatable)")
+    s.add_argument("--account", default="business", help="business (default) or personal: which Amazon sign-in to use")
     s = sub.add_parser("package"); s.add_argument("out"); s.add_argument("--account", default=None); s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None)
     a = p.parse_args(argv)
 
@@ -63,15 +69,48 @@ def main(argv=None):
             print(matcher.run_auto_match(conn))
         elif a.cmd == "amazon-login":
             from .invoices import fetcher
+            fetcher.set_account(a.account)
+            print(f"Amazon account: {fetcher.ACCOUNT}")
             fetcher.interactive_login(a.marketplace)
         elif a.cmd == "download-invoices":
             from .invoices import fetcher
-            if a.all:
+            fetcher.set_account(a.account)
+            print(f"Amazon account: {fetcher.ACCOUNT}")
+            if a.order:
+                ids = a.order
+            elif a.card or a.date_from or a.date_to:
+                where, args = ["1=1"], []
+                if a.card:
+                    where.append("s.card_last4 = ?"); args.append(a.card)
+                if a.date_from:
+                    where.append("s.shipped_date >= ?"); args.append(a.date_from)
+                if a.date_to:
+                    where.append("s.shipped_date <= ?"); args.append(a.date_to)
+                ids = [r[0] for r in conn.execute(f"SELECT DISTINCT s.order_id FROM shipments s WHERE {' AND '.join(where)} ORDER BY s.order_id", args)]
+            elif a.all:
                 ids = [r[0] for r in conn.execute("SELECT order_id FROM orders WHERE invoice_pdf IS NULL")]
             else:
                 ids = [r[0] for r in conn.execute("SELECT DISTINCT m.order_id FROM matches m JOIN orders o USING(order_id) WHERE o.invoice_pdf IS NULL")]
-            for oid, status in fetcher.download_many(conn, ids, headless=not a.visible).items():
+            for oid in ids:
+                db.ensure_order_stub(conn, oid, "amazon.ca")
+            conn.commit()
+            print(f"{len(ids)} orders to fetch")
+            results = fetcher.download_many(conn, ids, headless=not a.visible)
+            for oid, status in results.items():
                 print(oid, status)
+                fail = fetcher.INVOICE_DIR / "debug" / f"{oid}-failures.txt"
+                if not status.startswith("ok") and fail.exists():
+                    print("    ", fail.read_text(encoding="utf-8").splitlines()[0][:200])
+            print(f"details of what was found on Amazon: {fetcher.INVOICE_DIR / 'debug'}")
+            if a.out:
+                import shutil
+                out = Path(a.out); out.mkdir(parents=True, exist_ok=True)
+                n = 0
+                for oid in ids:
+                    for f in db.invoice_files(conn, oid):
+                        if Path(f).exists():
+                            shutil.copy(f, out / Path(f).name); n += 1
+                print(f"{n} PDFs copied to {out}")
         elif a.cmd == "package":
             data, stats = export.build_package(conn, account=a.account, date_from=a.date_from, date_to=a.date_to)
             Path(a.out).write_bytes(data)
