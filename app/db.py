@@ -294,8 +294,21 @@ def add_invoice_file(conn, order_id, path, label=None):
                  (order_id, path, label, now_iso()))
 
 
+def _resolve_data_path(path):
+    """A file path recorded on another machine is looked up under this machine's data folder."""
+    from pathlib import Path, PureWindowsPath
+    p = Path(path)
+    if p.exists():
+        return str(p)
+    name = PureWindowsPath(path).name if "\\" in path else p.name
+    for candidate in (config.DATA_DIR / "invoices" / name, config.DATA_DIR / "summaries" / name):
+        if candidate.exists():
+            return str(candidate)
+    return str(p)
+
+
 def invoice_files(conn, order_id):
-    return [r["path"] for r in conn.execute("SELECT path FROM invoice_files WHERE order_id = ? ORDER BY label, id", (order_id,))]
+    return [_resolve_data_path(r["path"]) for r in conn.execute("SELECT path FROM invoice_files WHERE order_id = ? ORDER BY label, id", (order_id,))]
 
 
 def mark_processed(conn, message_id, source, outcome, detail=None):

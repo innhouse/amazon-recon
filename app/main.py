@@ -514,8 +514,11 @@ def invoice_pdf(order_id: str):
         o = conn.execute("SELECT * FROM orders WHERE order_id = ?", (order_id,)).fetchone()
         if not o:
             return Response("unknown order", status_code=404)
-        if o["invoice_pdf"] and Path(o["invoice_pdf"]).exists():
-            data = Path(o["invoice_pdf"]).read_bytes()
+        files = [f for f in db.invoice_files(conn, order_id) if Path(f).exists()]
+        if files:
+            data = Path(files[0]).read_bytes()
+        elif o["invoice_pdf"] and Path(db._resolve_data_path(o["invoice_pdf"])).exists():
+            data = Path(db._resolve_data_path(o["invoice_pdf"])).read_bytes()
         else:
             ships = conn.execute("SELECT * FROM shipments WHERE order_id = ? ORDER BY shipped_date", (order_id,)).fetchall()
             items = conn.execute("SELECT * FROM order_items WHERE order_id = ?", (order_id,)).fetchall()
