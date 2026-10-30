@@ -16,7 +16,7 @@ import getpass
 import sys
 from pathlib import Path
 
-from . import db, export
+from . import config, db, export
 from .bank import importer
 from .recon import matcher
 
@@ -47,6 +47,11 @@ def main(argv=None):
     s.add_argument("--send", action="store_true", help="email the packages (RECON_MAIL_TO, RECON_SMTP_*)")
     s.add_argument("--draft", action="store_true", help="write .eml drafts instead of sending")
     s.add_argument("--out", default=None, help="folder for the zips (default data/monthly/<month>)")
+    s = sub.add_parser("month-end", help="the whole monthly routine: import newest Amazon report from Downloads, fetch missing invoices, sync, write (or send) the emails")
+    s.add_argument("--month", default=None, help="YYYY-MM (default: previous month)")
+    s.add_argument("--send", action="store_true", help="send the emails instead of writing drafts")
+    s.add_argument("--report", default=None, help="report CSV to import (default: newest 'reconciliation by shipment level*.csv' in Downloads)")
+    s.add_argument("--no-fetch", action="store_true"); s.add_argument("--no-sync", action="store_true")
     s = sub.add_parser("package"); s.add_argument("out"); s.add_argument("--account", default=None); s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None)
     a = p.parse_args(argv)
 
@@ -137,6 +142,50 @@ def main(argv=None):
                         if Path(f).exists():
                             shutil.copy(f, out / Path(f).name); n += 1
                 print(f"{n} PDFs copied to {out}")
+        elif a.cmd == "month-end":
+            import glob, os
+            from . import monthly
+            from .sources import amazon_report
+            from datetime import date as _date
+            # 1. newest shipment-level report in Downloads (or the one given)
+            report = a.report
+            if not report:
+                downloads = Path(os.path.expanduser("~")) / "Downloads"
+                cands = sorted(glob.glob(str(downloads / "reconciliation*by*shipment*level*.csv")), key=os.path.getmtime, reverse=True)
+                report = cands[0] if cands else None
+            if report:
+                content = Path(report).read_bytes()
+                stats, errors = amazon_report.import_shipment_report(conn, content)
+                db.kv_set(conn, "last_report_import", _date.today().isoformat()); conn.commit()
+                print(f"1/4 imported {Path(report).name}: {stats.summary()}" + (f", {len(errors)} rows skipped" if errors else ""))
+            else:
+                print("1/4 no 'reconciliation by shipment level' CSV found in Downloads; skipping import (download it from Business Analytics first)")
+            # 2. fetch missing invoices
+            if not a.no_fetch:
+                from .invoices import fetcher
+                ids = [r[0] for r in conn.execute("SELECT order_id FROM orders WHERE order_id NOT IN (SELECT DISTINCT order_id FROM invoice_files)")]
+                if ids:
+                    results = fetcher.download_many(conn, ids, headless=True)
+                    ok = sum(1 for v in results.values() if v.startswith("ok"))
+                    bad = {k: v for k, v in results.items() if not v.startswith("ok")}
+                    print(f"2/4 invoices fetched for {ok} of {len(ids)} orders" + (f"; problems: {bad}" if bad else ""))
+                    if any("signed-out" in v for v in bad.values()):
+                        print("    Amazon sign-in expired: run  python -m app.cli amazon-login  then  python -m app.cli month-end  again.")
+                else:
+                    print("2/4 all orders already have invoices")
+            # 3. sync to the website
+            if not a.no_sync:
+                from .cloud import sync
+                st = sync.upload(conn, log=lambda *x: None)
+                print(f"3/4 website updated: {st['pdfs_uploaded']} new PDFs, {st['orders']} orders, {st['charges']} charges")
+            # 4. monthly emails
+            pk = monthly.run(conn, month=a.month, mode="send" if a.send else "draft", log=lambda *x: None)
+            m = a.month or monthly.previous_month()
+            for p in pk:
+                print(f"4/4 card {p.card}: {len(p.charges)} charges, {p.pdf_count} PDFs, net {p.total:,.2f}" + (f", {len(p.missing_orders)} without invoice" if p.missing_orders else "") + (" - emailed" if a.send else " - draft written"))
+            if not pk:
+                print(f"4/4 no charges for {m}")
+            print(f"done. {'Emails sent.' if a.send else 'Drafts are in ' + str(config.DATA_DIR / 'monthly' / m)}")
         elif a.cmd == "monthly":
             from . import monthly
             mode = "send" if a.send else ("draft" if a.draft else "files")

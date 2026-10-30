@@ -77,7 +77,7 @@ def parse_shipment_report(content: bytes, *, marketplace: str = "amazon.ca") -> 
     for n, r in enumerate(rows[1:], start=2):
         try:
             oid = get(r, "order id")
-            if not re.fullmatch(r"\d{3}-\d{7}-\d{7}", oid):
+            if not re.fullmatch(r"[A-Z0-9]{3}-\d{7}-\d{7}", oid):
                 raise ValueError(f"bad order id {oid!r}")
             d = _date(get(r, "payment date")) or _date(get(r, "shipment/refund date"))
             amt_s = get(r, "net total")
@@ -138,7 +138,7 @@ def parse_report(content: bytes, *, marketplace: str = "amazon.ca") -> tuple[lis
             d = _date(get(r, "transaction date"))
             oid = get(r, "order id")
             amt = float(get(r, "payment amount").replace(",", ""))
-            if not d or not re.fullmatch(r"\d{3}-\d{7}-\d{7}", oid):
+            if not d or not re.fullmatch(r"[A-Z0-9]{3}-\d{7}-\d{7}", oid):
                 raise ValueError(f"bad date/order id: {get(r, 'transaction date')!r} {oid!r}")
             ttype = get(r, "transaction type").lower()
             ref = get(r, "payment reference id") or f"{oid}-{d}-{amt:.2f}"

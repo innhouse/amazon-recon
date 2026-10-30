@@ -11,3 +11,4 @@ output/
 data/imports/
 .pytest_cache/
 data/
+firebase/.firebase/

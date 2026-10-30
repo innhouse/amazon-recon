@@ -57,7 +57,7 @@ def import_orders_report(conn, content: bytes, *, marketplace: str = "amazon.ca"
     for n, r in enumerate(rows[1:], start=2):
         try:
             oid = get(r, "order id")
-            if not re.fullmatch(r"\d{3}-\d{7}-\d{7}", oid):
+            if not re.fullmatch(r"[A-Z0-9]{3}-\d{7}-\d{7}", oid):
                 raise ValueError(f"bad order id {oid!r}")
             currency = get(r, "currency") or "CAD"
             db.ensure_order_stub(conn, oid, marketplace, _date(get(r, "order date")),

@@ -136,14 +136,18 @@ Run the tests with `python -m pytest`.
   was removed in 2023. The pasted Transactions page, the emails, and the
   browser-based invoice download are the available routes.
 
-## Monthly routine (command line)
+## Monthly routine
+
+1. Amazon Business -> Business Analytics -> Reports -> Reconciliation by shipment level -> previous month -> Generate -> download (lands in Downloads).
+2. One command does the rest (import, fetch, sync to the website, write the emails):
 
 ```powershell
-python -m app.cli import-report "$HOME\Downloads\reconciliation_by_shipment_level_<dates>.csv"
-python -m app.cli download-invoices --all
-python -m app.cli sync            # pushes to the Firebase site
-python -m app.cli monthly --draft # or --send
+python -m app.cli month-end           # drafts in data\monthly\<month>\
+python -m app.cli month-end --send    # emails them to accounting
 ```
+
+If it reports the Amazon sign-in expired: `python -m app.cli amazon-login`, then run month-end again.
+The individual steps remain available: `import-report`, `download-invoices --all`, `sync`, `monthly`.
 
 ## Monthly package to accounting
 
