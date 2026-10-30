@@ -63,3 +63,46 @@ def test_orders_report_import_adds_items(client):
     assert "Orders report imported" in r.text and "items: 2" in r.text
     page = client.get("/charges?card=3874").text
     assert "Vanity light" in page and "22x Shower rod" in page
+
+
+def test_cloud_sync_payload(tmp_path, monkeypatch):
+    from app import config, db
+    from app.cloud import sync
+    from app.sources import amazon_report
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    conn = db.connect(tmp_path / "s.sqlite3")
+    amazon_report.import_shipment_report(conn, (FIX / "shipment_report.csv").read_bytes())
+    pdf = tmp_path / "invoices" / "amazon-invoice-701-0000002-0000002-01.pdf"
+    pdf.parent.mkdir(parents=True); pdf.write_bytes(b"%PDF-1.4 test")
+    db.add_invoice_file(conn, "701-0000002-0000002", str(pdf), "01")
+    payload = sync.build_payload(conn)
+    assert payload["summary"]["charges"] == 3 and payload["summary"]["cards"] == ["3874"]
+    c = payload["charges"]["REF003"]
+    assert c["code"] == "5E67Y2LA2" and c["amount"] == 42.12 and c["items"][0]["quantity"] == 6
+    assert c["invoice_files"] == ["invoices/701-0000002-0000002/amazon-invoice-701-0000002-0000002-01.pdf"]
+    assert sync.upload(conn, dry_run=True, log=lambda *a: None)["pdfs_total"] == 1
+
+
+def test_monthly_packages(tmp_path, monkeypatch):
+    import io, zipfile
+    from app import config, db, monthly
+    from app.sources import amazon_report
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    conn = db.connect(tmp_path / "m.sqlite3")
+    amazon_report.import_shipment_report(conn, (FIX / "shipment_report.csv").read_bytes())
+    pdf = tmp_path / "invoices" / "amazon-invoice-701-0000002-0000002-01.pdf"
+    pdf.parent.mkdir(parents=True); pdf.write_bytes(b"%PDF-1.4 test")
+    db.add_invoice_file(conn, "701-0000002-0000002", str(pdf), "01")
+    assert monthly.previous_month(__import__("datetime").date(2026, 1, 15)) == "2025-12"
+    pk = monthly.build_packages(conn, "2026-10")
+    assert [p.card for p in pk] == ["3874"]
+    p = pk[0]
+    assert len(p.charges) == 3 and p.pdf_count == 1 and p.missing_orders == ["701-0000001-0000001"]
+    assert round(p.total, 2) == 204.67
+    names = zipfile.ZipFile(io.BytesIO(p.zip_bytes)).namelist()
+    assert "701-0000002-0000002/amazon-invoice-701-0000002-0000002-01.pdf" in names and "statement-lines-card3874-2026-10.csv" in names
+    body = monthly.email_body(p)
+    assert "card #3874" in body and "AMAZON* 5E67Y2LA2" in body and "not yet available" in body
+    monkeypatch.setenv("RECON_MAIL_TO", "wendy@example.com")
+    out = monthly.run(conn, month="2026-10", mode="draft", out_dir=tmp_path / "out", log=lambda *a: None)
+    assert (tmp_path / "out" / "email-card3874-2026-10.eml").exists() and (tmp_path / "out" / out[0].filename).exists()

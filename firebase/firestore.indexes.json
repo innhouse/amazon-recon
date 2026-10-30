@@ -1,0 +1,9 @@
+{
+  "indexes": [
+    { "collectionGroup": "charges", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "card", "order": "ASCENDING" }, { "fieldPath": "date", "order": "ASCENDING" } ] },
+    { "collectionGroup": "refunds", "queryScope": "COLLECTION",
+      "fields": [ { "fieldPath": "card", "order": "ASCENDING" }, { "fieldPath": "date", "order": "ASCENDING" } ] }
+  ],
+  "fieldOverrides": []
+}

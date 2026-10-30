@@ -1,0 +1,18 @@
+rules_version = '2';
+// Rules for the innprop-amazon-recon-data bucket only (invoice PDFs).
+service firebase.storage {
+  match /b/{bucket}/o {
+    function innhouse() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@innhouse[.]bc[.]ca');
+    }
+    match /invoices/{allPaths=**} {
+      allow read: if innhouse();
+      allow write: if false;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

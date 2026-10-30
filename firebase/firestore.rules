@@ -1,0 +1,16 @@
+rules_version = '2';
+// Rules for the separate "amazon-recon" Firestore database only.
+// Read: signed-in InnHouse Google accounts. Write: nobody from the web (the PC sync uses the admin SDK).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function innhouse() {
+      return request.auth != null
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower().matches('.*@innhouse[.]bc[.]ca');
+    }
+    match /{document=**} {
+      allow read: if innhouse();
+      allow write: if false;
+    }
+  }
+}

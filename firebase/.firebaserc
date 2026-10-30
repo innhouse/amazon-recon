@@ -1,0 +1,8 @@
+{
+  "projects": { "default": "innprop-innhouse" },
+  "targets": {
+    "innprop-innhouse": {
+      "hosting": { "amazon-recon": ["amazon-recon-innhouse"] }
+    }
+  }
+}

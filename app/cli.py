@@ -37,6 +37,14 @@ def main(argv=None):
     s.add_argument("--out", default=None, help="folder to copy the PDFs into (e.g. a folder to attach from)")
     s.add_argument("--order", action="append", default=[], help="fetch this order only (repeatable)")
     s.add_argument("--account", default="business", help="business (default) or personal: which Amazon sign-in to use")
+    s = sub.add_parser("sync", help="upload orders, charges and invoice PDFs to Firebase (Firestore + Cloud Storage)")
+    s.add_argument("--dry-run", action="store_true")
+    s = sub.add_parser("monthly", help="per-card zip of a month's invoices, optionally emailed to accounting")
+    s.add_argument("--month", default=None, help="YYYY-MM (default: previous month)")
+    s.add_argument("--card", action="append", default=None, help="only this card (repeatable)")
+    s.add_argument("--send", action="store_true", help="email the packages (RECON_MAIL_TO, RECON_SMTP_*)")
+    s.add_argument("--draft", action="store_true", help="write .eml drafts instead of sending")
+    s.add_argument("--out", default=None, help="folder for the zips (default data/monthly/<month>)")
     s = sub.add_parser("package"); s.add_argument("out"); s.add_argument("--account", default=None); s.add_argument("--from", dest="date_from", default=None); s.add_argument("--to", dest="date_to", default=None)
     a = p.parse_args(argv)
 
@@ -111,6 +119,13 @@ def main(argv=None):
                         if Path(f).exists():
                             shutil.copy(f, out / Path(f).name); n += 1
                 print(f"{n} PDFs copied to {out}")
+        elif a.cmd == "monthly":
+            from . import monthly
+            mode = "send" if a.send else ("draft" if a.draft else "files")
+            monthly.run(conn, month=a.month, cards=a.card, mode=mode, out_dir=Path(a.out) if a.out else None)
+        elif a.cmd == "sync":
+            from .cloud import sync
+            print(sync.upload(conn, dry_run=a.dry_run))
         elif a.cmd == "package":
             data, stats = export.build_package(conn, account=a.account, date_from=a.date_from, date_to=a.date_to)
             Path(a.out).write_bytes(data)

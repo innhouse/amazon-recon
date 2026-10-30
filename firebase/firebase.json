@@ -1,0 +1,14 @@
+{
+  "hosting": {
+    "target": "amazon-recon",
+    "public": "web",
+    "ignore": ["firebase.json", "**/.*"],
+    "headers": [{ "source": "**", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }]
+  },
+  "firestore": [
+    { "database": "amazon-recon", "rules": "firestore.rules", "indexes": "firestore.indexes.json" }
+  ],
+  "storage": [
+    { "bucket": "innprop-amazon-recon-data", "rules": "storage.rules" }
+  ]
+}

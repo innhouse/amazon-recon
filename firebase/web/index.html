@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amazon invoices</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <span class="brand">Amazon invoices</span>
+  <nav id="nav" hidden>
+    <a href="#home" class="navbtn" data-page="home">Home</a>
+    <a href="#charges" class="navbtn" data-page="charges">Charges</a>
+  </nav>
+  <span id="who" class="who"></span>
+</header>
+
+<main>
+  <section id="signin" class="card center" hidden>
+    <h1>Amazon invoices</h1>
+    <p class="muted">Sign in with your InnHouse Google account.</p>
+    <button id="btn-signin">Sign in with Google</button>
+    <p id="signin-error" class="warn" hidden></p>
+  </section>
+
+  <section id="page-home" class="page" hidden>
+    <h1>Amazon invoices</h1>
+    <div class="card">
+      <h2>Data on file</h2>
+      <div class="tiles" id="tiles"></div>
+      <p class="muted small" id="freshness"></p>
+    </div>
+    <div class="card">
+      <h2>Answer an invoice request</h2>
+      <p class="muted">Pick the card and dates from accounting's email, or paste the statement lines (one per line, e.g. <code>AMAZON* 5E66L7HX2  $106.39</code>).</p>
+      <form id="form-filter" class="row">
+        <label>Card <select id="f-card"></select></label>
+        <label>From <input type="date" id="f-from"></label>
+        <label>To <input type="date" id="f-to"></label>
+        <button type="submit">Show charges</button>
+      </form>
+      <form id="form-paste" class="stack">
+        <textarea id="paste" rows="5" placeholder="AMAZON* 5E66L7HX2 VANCOUVER BC   $106.39
+AMAZON.CA* 5E00O04G2 VANCOUVER BC   $42.12"></textarea>
+        <button type="submit">Find these statement lines</button>
+      </form>
+    </div>
+  </section>
+
+  <section id="page-charges" class="page" hidden>
+    <h1 id="charges-title">Charges</h1>
+    <div class="card" id="result-actions" hidden>
+      <span id="result-summary"></span>
+      <div class="row">
+        <button id="btn-zip">Download invoices as one zip</button>
+        <button id="btn-csv" class="secondary">Download CSV</button>
+        <span id="zip-status" class="muted small"></span>
+      </div>
+    </div>
+    <div class="card">
+      <table id="charges-table">
+        <thead><tr><th>Charge date</th><th>Card</th><th>On statement as</th><th class="num">Amount</th><th>Order</th><th>What was bought</th><th>Invoices</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="charges-empty" class="muted" hidden>No charges match.</p>
+    </div>
+  </section>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script type="module" src="app.js"></script>
+</body>
+</html>

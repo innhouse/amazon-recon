@@ -135,3 +135,30 @@ Run the tests with `python -m pytest`.
 * **Personal accounts have no API** and the old Order History Reports export
   was removed in 2023. The pasted Transactions page, the emails, and the
   browser-based invoice download are the available routes.
+
+## Monthly package to accounting
+
+`python -m app.cli monthly` builds, for the previous month and for each card, a zip with the
+month's invoice PDFs plus a CSV of the statement lines (date, "AMAZON* code", amount, order,
+item), and can email one message per card.
+
+```powershell
+# once: who receives it and how it is sent (a Google app password for the sending address)
+setx RECON_MAIL_TO "wendy@innhouse.bc.ca"
+setx RECON_MAIL_CC "amin@innhouse.bc.ca"
+setx RECON_SMTP_USER "amin@innhouse.bc.ca"
+setx RECON_SMTP_PASSWORD "xxxx xxxx xxxx xxxx"
+
+python -m app.cli monthly --draft          # writes zips + .eml drafts to data\monthly\<month>\ for review
+python -m app.cli monthly --send           # emails them
+python -m app.cli monthly --month 2026-09 --card 3874 --send
+```
+
+Orders whose invoice is not stored yet are listed in the email as "will follow" rather than
+skipped. Run `download-invoices --all` first to minimise those.
+
+Schedule it on the PC (3rd of each month at 9:00; the report import and fetch must have run first):
+
+```powershell
+schtasks /Create /SC MONTHLY /D 3 /ST 09:00 /TN "Amazon invoices monthly" /TR "powershell -NoProfile -Command \"cd $HOME\amazon-recon; .\.venv\Scripts\python.exe -m app.cli monthly --send\""
+```
