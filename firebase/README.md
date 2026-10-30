@@ -16,8 +16,8 @@ gcloud firestore databases create --database=amazon-recon --location=northameric
 #    Firebase console -> Storage -> "Add bucket" -> Import existing bucket -> innprop-amazon-recon-data
 
 # 3. A Hosting site for this app, next to InnProp's.
-firebase hosting:sites:create amazon-recon-innhouse
-firebase target:apply hosting amazon-recon amazon-recon-innhouse
+firebase hosting:sites:create recon-innhouse
+firebase target:apply hosting amazon-recon recon-innhouse
 
 # 4. Google sign-in: Firebase console -> Authentication -> Sign-in method -> Google -> Enable.
 #    Add the hosting domain under Authentication -> Settings -> Authorized domains if it is not listed.
@@ -26,7 +26,7 @@ firebase target:apply hosting amazon-recon amazon-recon-innhouse
 firebase deploy --only "firestore,storage,hosting:amazon-recon"
 ```
 
-Site: https://amazon-recon-innhouse.web.app (a custom domain such as invoices.innhouse.bc.ca can be
+Site: https://recon-innhouse.web.app (a custom domain such as invoices.innhouse.bc.ca can be
 added under Hosting -> Add custom domain).
 
 ## Loading data

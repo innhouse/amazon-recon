@@ -27,6 +27,8 @@ def main(argv=None):
     s = sub.add_parser("sync-imap"); s.add_argument("--lookback", type=int, default=400)
     sub.add_parser("sync-gmail")
     s = sub.add_parser("import-eml"); s.add_argument("folder")
+    s = sub.add_parser("import-report", help="import an Amazon Business report CSV (reconciliation, shipment-level or orders)")
+    s.add_argument("file", nargs="+"); s.add_argument("--marketplace", default="amazon.ca")
     s = sub.add_parser("import-bank"); s.add_argument("file"); s.add_argument("--account", default=None); s.add_argument("--currency", default="CAD")
     sub.add_parser("match")
     s = sub.add_parser("amazon-login"); s.add_argument("--marketplace", default="amazon.ca")
@@ -64,6 +66,22 @@ def main(argv=None):
         elif a.cmd == "import-eml":
             from .sources import eml_source
             print(eml_source.import_folder(conn, Path(a.folder)).summary())
+        elif a.cmd == "import-report":
+            import csv as _csv, io as _io
+            from datetime import date as _date
+            from .sources import amazon_orders_report, amazon_report
+            for f in a.file:
+                content = Path(f).read_bytes()
+                header = next(_csv.reader(_io.StringIO(content.decode("utf-8-sig", errors="replace"))), [])
+                if amazon_report.looks_like_shipment_report(header):
+                    stats, errors = amazon_report.import_shipment_report(conn, content, marketplace=a.marketplace); kind = "shipment-level reconciliation"
+                elif amazon_orders_report.looks_like_orders_report(header):
+                    stats, errors = amazon_orders_report.import_orders_report(conn, content, marketplace=a.marketplace); kind = "orders"
+                else:
+                    stats, errors = amazon_report.import_report(conn, content, marketplace=a.marketplace); kind = "reconciliation"
+                db.kv_set(conn, "last_report_import", _date.today().isoformat()); conn.commit()
+                print(f"{Path(f).name}: {kind} report, {stats.summary()}" + (f", {len(errors)} rows skipped" if errors else ""))
+            print(matcher.run_auto_match(conn))
         elif a.cmd == "import-bank":
             rows = importer.read_rows(Path(a.file).read_bytes())
             m = importer.detect_mapping(rows)

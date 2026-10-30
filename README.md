@@ -136,6 +136,15 @@ Run the tests with `python -m pytest`.
   was removed in 2023. The pasted Transactions page, the emails, and the
   browser-based invoice download are the available routes.
 
+## Monthly routine (command line)
+
+```powershell
+python -m app.cli import-report "$HOME\Downloads\reconciliation_by_shipment_level_<dates>.csv"
+python -m app.cli download-invoices --all
+python -m app.cli sync            # pushes to the Firebase site
+python -m app.cli monthly --draft # or --send
+```
+
 ## Monthly package to accounting
 
 `python -m app.cli monthly` builds, for the previous month and for each card, a zip with the
